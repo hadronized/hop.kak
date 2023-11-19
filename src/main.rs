@@ -1,28 +1,18 @@
 //! A small program that reads pairs of (line, column) on the standard input and writes triples of (line, column, hint)
 //! on the standard output.
 
-use clap::{Parser, Subcommand};
+use std::{
+  io::{stdin, Read},
+  str::FromStr,
+};
+
+use clap::Parser;
 
 #[derive(Debug, Parser)]
 struct Cli {
-  /// Keys to use as base for hints.
+  /// Keyset to use as base for hints.
   #[clap(short, long)]
-  keys: String,
-
-  /// Operation mode. This dictates what is expected on the standard input and what is produced on the standard output.
-  #[clap(subcommand)]
-  operation: Operation,
-}
-
-#[derive(Clone, Debug, Subcommand)]
-enum Operation {
-  /// Create hints for the content of the buffer (read from the standard input), and display them on the standard
-  /// output.
-  Hints,
-
-  /// Reduce a set of tagged hints (read from the standard input) with the provided key, and output the reduction on the
-  /// standard output.
-  Reduce { key: char },
+  keyset: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -108,35 +98,69 @@ impl Trie {
 }
 
 /// Position in the buffer.
+#[derive(Debug)]
 struct Pos {
   line: usize,
   col: usize,
 }
 
-/// Buffer hint, which is the start and end of a token and the label (keys).
-struct Hint {
-  start: Pos,
-  end: Pos,
-  label: String,
+impl FromStr for Pos {
+  type Err = ();
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    let mut parts = s.split('.');
+    let line = parts.next().ok_or(())?.parse().map_err(|_| ())?;
+    let col = parts.next().ok_or(())?.parse().map_err(|_| ())?;
+
+    Ok(Pos { line, col })
+  }
 }
 
-/// Generate hints.
-fn op_hints(keyset: &[char], words: &[Pos]) -> Vec<Hint> {
-  let mut trie = Trie::default();
-  trie.grow_repeatedly(words.len(), keyset);
+/// A selection in the buffer.
+#[derive(Debug)]
+struct Sel {
+  start: Pos,
+  end: Pos,
+}
 
-  todo!()
+impl FromStr for Sel {
+  type Err = ();
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    let mut parts = s.split(',');
+    let start = parts.next().ok_or(())?.parse().map_err(|_| ())?;
+    let end = parts.next().ok_or(())?.parse().map_err(|_| ())?;
+
+    Ok(Sel { start, end })
+  }
 }
 
 fn main() {
   let cli = Cli::parse();
+  let keyset = cli.keyset.chars().collect::<Vec<_>>();
+
+  // read the selections from standard input
+  let mut contents = String::new();
+  stdin().read_to_string(&mut contents).unwrap(); // TODO: unwrap
+  let sels: Vec<Sel> = contents
+    .split_whitespace()
+    .flat_map(|s| s.parse())
+    .collect::<Vec<_>>();
+
   let mut trie = Trie::default();
-  let keyset = cli.keys.chars().collect::<Vec<_>>();
+  trie.grow_repeatedly(sels.len(), &keyset);
 
-  trie.grow_repeatedly(10, &keyset);
-
-  let paths = trie.hints();
-  println!("{}\n", paths.join("\n"));
+  print!("set-option buffer hop_ranges %val{{timestamp}} ");
+  for (hint, sel) in trie.hints().into_iter().zip(sels) {
+    print!(
+      "{start_line}.{start_col},{end_line}.{end_col}|{{green}}{hint} ",
+      start_line = sel.start.line,
+      start_col = sel.start.col,
+      end_line = sel.end.line,
+      end_col = sel.end.col,
+    );
+  }
+  println!();
 }
 
 #[cfg(test)]
