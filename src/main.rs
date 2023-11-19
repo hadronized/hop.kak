@@ -84,62 +84,26 @@ impl Trie {
     }
   }
 
-  /// Traverse the tree paths.
-  fn paths(&self) -> Vec<String> {
+  fn hints(&self) -> Vec<String> {
     let mut paths = Vec::default();
 
     for below in &self.below {
-      below.paths_("", &mut paths);
+      below.hints_("", &mut paths);
     }
 
     paths
   }
 
-  fn paths_(&self, path: &str, paths: &mut Vec<String>) {
+  fn hints_(&self, path: &str, paths: &mut Vec<String>) {
     let path = format!("{path}{}", self.key);
 
     if self.below.is_empty() {
       paths.push(path);
     } else {
       for below in &self.below {
-        below.paths_(&path, paths);
+        below.hints_(&path, paths);
       }
     }
-  }
-
-  fn iter(&mut self, keys: &mut Vec<char>) -> Option<String> {
-    keys.push(self.key);
-
-    if self.below.is_empty() {
-      if keys.len() <= 1 {
-        return None;
-      }
-
-      return Some(keys.iter().skip(1).collect()); // we skip the initial ' ' (root node)
-    }
-
-    let mut iter = std::mem::take(&mut self.below).into_iter();
-
-    // TODO: this is wrong, because we should not remove the item for now
-    for mut below in iter.by_ref() {
-      let next = below.iter(keys);
-      if next.is_some() {
-        self.below = iter.collect();
-        keys.pop();
-        return next;
-      }
-    }
-
-    keys.pop();
-    None
-  }
-}
-
-impl Iterator for Trie {
-  type Item = String;
-
-  fn next(&mut self) -> Option<Self::Item> {
-    todo!()
   }
 }
 
@@ -169,9 +133,9 @@ fn main() {
   let mut trie = Trie::default();
   let keyset = cli.keys.chars().collect::<Vec<_>>();
 
-  trie.grow_repeatedly(20, &keyset);
+  trie.grow_repeatedly(10, &keyset);
 
-  let paths = trie.paths();
+  let paths = trie.hints();
   println!("{}\n", paths.join("\n"));
 }
 
@@ -181,31 +145,19 @@ mod tests {
 
   #[test]
   fn iter() {
-    let mut trie = Trie::default();
     let keyset = "abcd".chars().collect::<Vec<_>>();
 
+    let mut trie = Trie::default();
     trie.grow_repeatedly(4, &keyset);
-    let mut trie2 = trie.clone();
+    let hints = trie.hints();
+    assert_eq!(hints, vec!["a", "b", "c", "d"]);
 
-    assert_eq!(trie2.iter(&mut Vec::default()), Some("a".to_owned()));
-    assert_eq!(trie2.iter(&mut Vec::default()), Some("b".to_owned()));
-    assert_eq!(trie2.iter(&mut Vec::default()), Some("c".to_owned()));
-    assert_eq!(trie2.iter(&mut Vec::default()), Some("d".to_owned()));
-    assert_eq!(trie2.iter(&mut Vec::default()), None);
-    assert_eq!(trie2.iter(&mut Vec::default()), None);
-
-    trie.grow_repeatedly(6, &keyset);
-    let mut trie2 = trie.clone();
-    assert_eq!(trie2.iter(&mut Vec::default()), Some("aa".to_owned()));
-    assert_eq!(trie2.iter(&mut Vec::default()), Some("ab".to_owned()));
-    assert_eq!(trie2.iter(&mut Vec::default()), Some("ac".to_owned()));
-    assert_eq!(trie2.iter(&mut Vec::default()), Some("ad".to_owned()));
-    assert_eq!(trie2.iter(&mut Vec::default()), Some("ba".to_owned()));
-    assert_eq!(trie2.iter(&mut Vec::default()), Some("bb".to_owned()));
-    assert_eq!(trie2.iter(&mut Vec::default()), Some("bc".to_owned()));
-    assert_eq!(trie2.iter(&mut Vec::default()), Some("bd".to_owned()));
-    assert_eq!(trie2.iter(&mut Vec::default()), Some("c".to_owned()));
-    assert_eq!(trie2.iter(&mut Vec::default()), Some("d".to_owned()));
-    assert_eq!(trie2.iter(&mut Vec::default()), None);
+    let mut trie = Trie::default();
+    trie.grow_repeatedly(10, &keyset);
+    let hints = trie.hints();
+    assert_eq!(
+      hints,
+      vec!["a", "b", "ca", "cb", "cc", "cd", "da", "db", "dc", "dd"]
+    );
   }
 }
