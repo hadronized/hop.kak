@@ -1,5 +1,9 @@
 # Hop: hinting brought to Kakoune selections
 
+<p align="center">
+  <img src="<https://github.com/phaazon/hop.kak/assets/506592/2378acbc-a7ee-4681-8466-da1c38e0f15e"/>
+</p>
+
 Table of content:
 
 - [Install](#install)
