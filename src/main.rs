@@ -10,6 +10,12 @@ use unicode_segmentation::UnicodeSegmentation;
 const RC: &str = include_str!("../hop.kak");
 
 #[derive(Debug, Parser)]
+#[clap(
+  author = "Dimitri Sabadie <dimitri.sabadie@gmail.com>",
+  name = "hop-kak",
+  version = concat!(env!("CARGO_PKG_VERSION"), "-", env!("GIT_HEAD")),
+  about = "Hopping around in Kakoune!"
+)]
 struct Cli {
   /// Initialize Kakoune.
   ///
