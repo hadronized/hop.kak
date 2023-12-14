@@ -4,6 +4,7 @@
 use std::str::FromStr;
 
 use clap::Parser;
+use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -250,12 +251,16 @@ impl Response {
     for range in replace_ranges {
       let sel = &range.sel;
       let label = &range.label;
+      let label_len = label
+        .graphemes(true)
+        .count()
+        .min(sel.end.col - sel.start.col + 1);
+      let label: String = label.graphemes(true).take(label_len).collect();
 
       print!(
         "{start_line}.{start_col}+{label_len}|{{hop_label}}{label} ",
         start_line = sel.start.line,
-        start_col = sel.start.col,
-        label_len = label.len(),
+        start_col = sel.end.col - label_len + 1,
       );
     }
 
