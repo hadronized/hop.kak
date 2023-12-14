@@ -1,6 +1,6 @@
 [package]
 name = "hop-kak"
-version = "0.1.0-dev"
+version = "0.2.0"
 authors = ["Dimitri Sabadie <dimitri.sabadie@gmail.com>"]
 edition = "2021"
 rust-version = "1.71"
@@ -10,7 +10,7 @@ repository = "https://github.com/phaazon/hop.kak"
 license = "BSD-3-Clause"
 keywords = ["hint", "kakoune"]
 categories = []
-publish = false
+publish = true
 
 [features]
 default = ["init"]
