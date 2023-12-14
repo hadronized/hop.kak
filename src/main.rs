@@ -258,13 +258,27 @@ impl Response {
         .graphemes(true)
         .count()
         .min(sel.end.col - sel.start.col + 1);
-      let label: String = label.graphemes(true).take(label_len).collect();
+      let mut graphemes = label.graphemes(true).take(label_len);
 
-      print!(
-        "{start_line}.{start_col}+{label_len}|{{hop_label}}{label} ",
-        start_line = sel.start.line,
-        start_col = sel.end.col - label_len + 1,
-      );
+      // always display the first grapheme differently
+      if let Some(head) = graphemes.next() {
+        print!(
+          "{start_line}.{start_col}+1|{{hop_label_head}}{head} ",
+          start_line = sel.start.line,
+          start_col = sel.end.col - label_len + 1,
+        );
+
+        let tail: String = graphemes.collect();
+
+        if !tail.is_empty() {
+          print!(
+            "{start_line}.{start_col}+{label_len}|{{hop_label_tail}}{tail} ",
+            start_line = sel.start.line,
+            start_col = sel.end.col - label_len + 2,
+            label_len = label_len - 1
+          );
+        }
+      }
     }
 
     println!();
