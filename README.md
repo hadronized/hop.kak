@@ -42,6 +42,14 @@ You must include the [hop.kak](./hop.kak) file before trying to use Hop. It cont
 - The `hop_ranges` option. Used to highlight your buffer with the labels.
 - The `hop_label` face definition. Feel free to override the default.
 
+Another approach is to use `hop-kak --init` inside your `kakrc` to automatically inject the of the `hop.kak` file:
+
+```kak
+evaluate-commands %sh{ hop-kak --init }
+```
+
+> `--init` is only available if `hop-kak` is compiled with the `init` features, which is enabled by default.
+
 ### `hop-kak` options
 
 `hop-kak` — the built binary — doesn’t have any configuration file. Instead, it is configured by passing CLI arguments:

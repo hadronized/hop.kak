@@ -6,8 +6,18 @@ use std::str::FromStr;
 use clap::Parser;
 use unicode_segmentation::UnicodeSegmentation;
 
+#[cfg(feature = "init")]
+const RC: &str = include_str!("../hop.kak");
+
 #[derive(Debug, Parser)]
 struct Cli {
+  /// Initialize Kakoune.
+  ///
+  /// This should be called only once, when starting a Kakoune session.
+  #[cfg(feature = "init")]
+  #[clap(long)]
+  init: bool,
+
   /// Keyset to use as base for hints.
   #[clap(short, long)]
   keyset: Option<String>,
@@ -19,7 +29,7 @@ struct Cli {
   ///
   /// Selections are space separated.
   #[clap(short, long)]
-  sels: String,
+  sels: Option<String>,
 
   /// Labels hints to reduce.
   ///
@@ -182,6 +192,7 @@ impl App {
       .unwrap_or_default();
     let sels: Vec<_> = cli
       .sels
+      .unwrap_or_default()
       .split_whitespace()
       .filter_map(|sel| sel.parse::<Sel>().ok())
       .collect();
@@ -354,6 +365,13 @@ impl ReplaceRange {
 
 fn main() {
   let cli = Cli::parse();
+
+  #[cfg(feature = "init")]
+  if cli.init {
+    print!("{}", RC);
+    return;
+  }
+
   let app = App::new(cli);
 
   let resp = app.process();

@@ -12,6 +12,10 @@ keywords = ["hint", "kakoune"]
 categories = []
 publish = false
 
+[features]
+default = ["init"]
+init = []
+
 [dependencies]
 clap = { version = "4.4.8", features = ["derive"] }
 unicode-segmentation = "1.10.1"
