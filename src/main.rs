@@ -10,7 +10,7 @@ use unicode_segmentation::UnicodeSegmentation;
 struct Cli {
   /// Keyset to use as base for hints.
   #[clap(short, long)]
-  keyset: String,
+  keyset: Option<String>,
 
   /// Selections to act on.
   ///
@@ -176,7 +176,10 @@ struct App {
 
 impl App {
   fn new(cli: Cli) -> Self {
-    let keyset = cli.keyset.chars().collect::<Vec<_>>();
+    let keyset = cli
+      .keyset
+      .map(|keyset| keyset.chars().collect::<Vec<_>>())
+      .unwrap_or_default();
     let sels: Vec<_> = cli
       .sels
       .split_whitespace()
@@ -283,7 +286,7 @@ impl Response {
     let labels = labels.join(" ");
 
     println!(
-      r#"on-key 'evaluate-commands -save-regs ^ -no-hooks -- %sh{{ {bin} --keyset "" --sels "{sels}" --labels "{labels}" --key $kak_key }}'"#,
+      r#"on-key 'evaluate-commands -save-regs ^ -no-hooks -- %sh{{ {bin} --sels "{sels}" --labels "{labels}" --key $kak_key }}'"#,
       bin = std::env::current_exe().unwrap().display()
     );
   }
