@@ -1,10 +1,7 @@
 //! A small program that reads pairs of (line, column) on the standard input and writes triples of (line, column, hint)
 //! on the standard output.
 
-use std::{
-  io::{stdin, Read},
-  str::FromStr,
-};
+use std::str::FromStr;
 
 use clap::Parser;
 
@@ -13,6 +10,27 @@ struct Cli {
   /// Keyset to use as base for hints.
   #[clap(short, long)]
   keyset: String,
+
+  /// Selections to act on.
+  ///
+  /// The syntax of a single selection is two pairs separated by a comma, each pair being a pair of period separated
+  /// number: `line_start.column_start,line_end.column_end`.
+  ///
+  /// Selections are space separated.
+  #[clap(short, long)]
+  sels: String,
+
+  /// Labels hints to reduce.
+  ///
+  /// This is a list of labels, space separated string, to reduce. Those are zipped with `sels`.
+  #[clap(short, long)]
+  labels: Option<String>,
+
+  /// Reduction key.
+  ///
+  /// Key used to reduce the list of `labels`.
+  #[clap(short = 'z', long)]
+  key: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -74,31 +92,31 @@ impl Trie {
     }
   }
 
-  fn hints(&self) -> Vec<String> {
+  fn labels(&self) -> Vec<String> {
     let mut paths = Vec::default();
 
     for below in &self.below {
-      below.hints_("", &mut paths);
+      below.labels_("", &mut paths);
     }
 
     paths
   }
 
-  fn hints_(&self, path: &str, paths: &mut Vec<String>) {
+  fn labels_(&self, path: &str, paths: &mut Vec<String>) {
     let path = format!("{path}{}", self.key);
 
     if self.below.is_empty() {
       paths.push(path);
     } else {
       for below in &self.below {
-        below.hints_(&path, paths);
+        below.labels_(&path, paths);
       }
     }
   }
 }
 
 /// Position in the buffer.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Pos {
   line: usize,
   col: usize,
@@ -117,7 +135,7 @@ impl FromStr for Pos {
 }
 
 /// A selection in the buffer.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Sel {
   start: Pos,
   end: Pos,
@@ -135,32 +153,189 @@ impl FromStr for Sel {
   }
 }
 
-fn main() {
-  let cli = Cli::parse();
-  let keyset = cli.keyset.chars().collect::<Vec<_>>();
+impl Sel {
+  fn to_str(&self) -> String {
+    format!(
+      "{line_start}.{col_start},{line_end}.{col_end}",
+      line_start = self.start.line,
+      col_start = self.start.col,
+      line_end = self.end.line,
+      col_end = self.end.col,
+    )
+  }
+}
 
-  // read the selections from standard input
-  let mut contents = String::new();
-  stdin().read_to_string(&mut contents).unwrap(); // TODO: unwrap
-  let sels: Vec<Sel> = contents
-    .split_whitespace()
-    .flat_map(|s| s.parse())
-    .collect::<Vec<_>>();
+#[derive(Debug)]
+struct App {
+  keyset: Vec<char>,
+  sels: Vec<Sel>,
+  labels: Vec<String>,
+  key: Option<String>,
+}
 
-  let mut trie = Trie::default();
-  trie.grow_repeatedly(sels.len(), &keyset);
+impl App {
+  fn new(cli: Cli) -> Self {
+    let keyset = cli.keyset.chars().collect::<Vec<_>>();
+    let sels: Vec<_> = cli
+      .sels
+      .split_whitespace()
+      .filter_map(|sel| sel.parse::<Sel>().ok())
+      .collect();
+    let labels = cli
+      .labels
+      .map(|labels| labels.split_whitespace().map(|s| s.to_owned()).collect())
+      .unwrap_or_default();
+    let key = cli.key;
 
-  print!("set-option buffer hop_ranges %val{{timestamp}} ");
-  for (hint, sel) in trie.hints().into_iter().zip(sels) {
-    print!(
-      "{start_line}.{start_col},{end_line}.{end_col}|{{green}}{hint} ",
-      start_line = sel.start.line,
-      start_col = sel.start.col,
-      end_line = sel.end.line,
-      end_col = sel.end.col,
+    Self {
+      keyset,
+      sels,
+      labels,
+      key,
+    }
+  }
+
+  fn process(self) -> Response {
+    // if we don’t have any label / no key is set, then we are tasked to generate the labels first
+    match self.key {
+      None => Self::generate_labels(self.sels, self.keyset),
+      Some(key) => Self::reduce(self.sels, self.labels, key),
+    }
+  }
+
+  fn generate_labels(sels: Vec<Sel>, keyset: Vec<char>) -> Response {
+    let mut trie = Trie::default();
+    trie.grow_repeatedly(sels.len(), &keyset);
+
+    let replace_ranges = trie
+      .labels()
+      .into_iter()
+      .zip(sels)
+      .map(|(label, sel)| ReplaceRange::new(sel, label))
+      .collect();
+
+    Response::LabelsGenerated { replace_ranges }
+  }
+
+  fn reduce(sels: Vec<Sel>, labels: Vec<String>, key: String) -> Response {
+    if key == "<esc>" {
+      return Response::Cleanup;
+    }
+
+    let replace_ranges = sels
+      .into_iter()
+      .zip(labels)
+      .filter_map(|(sel, label)| {
+        label
+          .strip_prefix(&key)
+          .map(|label| ReplaceRange::new(sel, label.to_owned()))
+      })
+      .collect();
+
+    Response::Reduced { replace_ranges }
+  }
+}
+
+#[derive(Debug)]
+enum Response {
+  Cleanup,
+  LabelsGenerated { replace_ranges: Vec<ReplaceRange> },
+  Reduced { replace_ranges: Vec<ReplaceRange> },
+}
+
+impl Response {
+  fn display_replace_ranges(replace_ranges: &[ReplaceRange]) {
+    print!("set-option window hop_ranges %val{{timestamp}} ");
+
+    for range in replace_ranges {
+      let sel = &range.sel;
+      let label = &range.label;
+
+      print!(
+        "{start_line}.{start_col}+{label_len}|{{hop_label}}{label} ",
+        start_line = sel.start.line,
+        start_col = sel.start.col,
+        label_len = label.len(),
+      );
+    }
+
+    println!();
+  }
+
+  fn display_cleanup() {
+    println!("try %{{ remove-highlighter window/hop-ranges }}");
+  }
+
+  fn display_reduce_callback(replace_ranges: &[ReplaceRange]) {
+    if replace_ranges.len() == 1 {
+      Self::display_cleanup();
+      return;
+    }
+
+    let sels: Vec<_> = replace_ranges.iter().map(|r| r.sel.to_str()).collect();
+    let sels = sels.join(" ");
+    let labels: Vec<_> = replace_ranges.iter().map(|r| r.label.as_str()).collect();
+    let labels = labels.join(" ");
+
+    println!(
+      r#"on-key 'evaluate-commands -save-regs ^ -no-hooks -- %sh{{ {bin} --keyset "" --sels "{sels}" --labels "{labels}" --key $kak_key }}'"#,
+      bin = std::env::current_exe().unwrap().display()
     );
   }
-  println!();
+
+  fn display_new_sels(replace_ranges: &[ReplaceRange]) {
+    print!(r#"set-register ^ "%val{{buffile}}@%val{{timestamp}}@0" "#);
+    for range in replace_ranges {
+      print!("{} ", range.sel.to_str());
+    }
+    println!();
+
+    println!("execute-keys z");
+  }
+
+  fn into_stdout(self) {
+    match self {
+      Self::Cleanup => Self::display_cleanup(),
+
+      Self::LabelsGenerated { replace_ranges } => {
+        Self::display_cleanup();
+
+        println!("add-highlighter window/hop-ranges replace-ranges hop_ranges");
+
+        Self::display_replace_ranges(&replace_ranges);
+        Self::display_reduce_callback(&replace_ranges);
+      }
+
+      Self::Reduced { replace_ranges } => {
+        Self::display_replace_ranges(&replace_ranges);
+        Self::display_new_sels(&replace_ranges);
+        Self::display_reduce_callback(&replace_ranges);
+      }
+    }
+  }
+}
+
+#[derive(Debug)]
+struct ReplaceRange {
+  sel: Sel,
+  label: String,
+}
+
+impl ReplaceRange {
+  fn new(sel: Sel, label: impl Into<String>) -> Self {
+    Self {
+      sel,
+      label: label.into(),
+    }
+  }
+}
+
+fn main() {
+  let cli = Cli::parse();
+  let app = App::new(cli);
+
+  let resp = app.process();
+  resp.into_stdout();
 }
 
 #[cfg(test)]
@@ -173,12 +348,12 @@ mod tests {
 
     let mut trie = Trie::default();
     trie.grow_repeatedly(4, &keyset);
-    let hints = trie.hints();
+    let hints = trie.labels();
     assert_eq!(hints, vec!["a", "b", "c", "d"]);
 
     let mut trie = Trie::default();
     trie.grow_repeatedly(10, &keyset);
-    let hints = trie.hints();
+    let hints = trie.labels();
     assert_eq!(
       hints,
       vec!["a", "b", "ca", "cb", "cc", "cd", "da", "db", "dc", "dd"]
