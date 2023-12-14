@@ -1,7 +1,7 @@
 # Hop: hinting brought to Kakoune selections
 
 <p align="center">
-  <img src="https://github.com/phaazon/hop.kak/assets/506592/6afd368b-5d42-4a70-af10-f55a9c9c366b"/>
+  <img src="https://github.com/phaazon/hop.kak/assets/506592/ab90b0d1-4a07-458b-b5fe-4b10f26880d7"/>
 </p>
 
 Table of content:
