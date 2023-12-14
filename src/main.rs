@@ -1,9 +1,9 @@
 //! A small program that reads pairs of (line, column) on the standard input and writes triples of (line, column, hint)
 //! on the standard output.
 
-use std::str::FromStr;
+use std::{fmt::Display, str::FromStr};
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use unicode_segmentation::UnicodeSegmentation;
 
 #[cfg(feature = "init")]
@@ -48,6 +48,29 @@ struct Cli {
   /// Key used to reduce the list of `labels`.
   #[clap(short = 'z', long)]
   key: Option<String>,
+
+  /// Selection handle to hint.
+  ///
+  /// It’s possible to either select the anchor or the cursor.
+  #[clap(short, long)]
+  handle: Option<Handle>,
+}
+
+#[derive(Copy, Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd, ValueEnum)]
+enum Handle {
+  #[default]
+  Anchor,
+
+  Cursor,
+}
+
+impl Display for Handle {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Handle::Anchor => f.write_str("anchor"),
+      Handle::Cursor => f.write_str("cursor"),
+    }
+  }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -188,6 +211,7 @@ struct App {
   sels: Vec<Sel>,
   labels: Vec<String>,
   key: Option<String>,
+  handle: Handle,
 }
 
 impl App {
@@ -207,24 +231,26 @@ impl App {
       .map(|labels| labels.split_whitespace().map(|s| s.to_owned()).collect())
       .unwrap_or_default();
     let key = cli.key;
+    let handle = cli.handle.unwrap_or_default();
 
     Self {
       keyset,
       sels,
       labels,
       key,
+      handle,
     }
   }
 
   fn process(self) -> Response {
     // if we don’t have any label / no key is set, then we are tasked to generate the labels first
     match self.key {
-      None => Self::generate_labels(self.sels, self.keyset),
-      Some(key) => Self::reduce(self.sels, self.labels, key),
+      None => Self::generate_labels(self.sels, self.keyset, self.handle),
+      Some(key) => Self::reduce(self.sels, self.labels, key, self.handle),
     }
   }
 
-  fn generate_labels(sels: Vec<Sel>, keyset: Vec<char>) -> Response {
+  fn generate_labels(sels: Vec<Sel>, keyset: Vec<char>, handle: Handle) -> Response {
     let mut trie = Trie::default();
     trie.grow_repeatedly(sels.len(), &keyset);
 
@@ -235,10 +261,13 @@ impl App {
       .map(|(label, sel)| ReplaceRange::new(sel, label))
       .collect();
 
-    Response::LabelsGenerated { replace_ranges }
+    Response::LabelsGenerated {
+      replace_ranges,
+      handle,
+    }
   }
 
-  fn reduce(sels: Vec<Sel>, labels: Vec<String>, key: String) -> Response {
+  fn reduce(sels: Vec<Sel>, labels: Vec<String>, key: String, handle: Handle) -> Response {
     if key == "<esc>" {
       return Response::Cleanup;
     }
@@ -253,19 +282,35 @@ impl App {
       })
       .collect();
 
-    Response::Reduced { replace_ranges }
+    Response::Reduced {
+      replace_ranges,
+      handle,
+    }
   }
 }
 
 #[derive(Debug)]
 enum Response {
   Cleanup,
-  LabelsGenerated { replace_ranges: Vec<ReplaceRange> },
-  Reduced { replace_ranges: Vec<ReplaceRange> },
+  LabelsGenerated {
+    replace_ranges: Vec<ReplaceRange>,
+    handle: Handle,
+  },
+  Reduced {
+    replace_ranges: Vec<ReplaceRange>,
+    handle: Handle,
+  },
 }
 
 impl Response {
-  fn display_replace_ranges(replace_ranges: &[ReplaceRange]) {
+  fn set_handle(handle: Handle) {
+    match handle {
+      Handle::Anchor => println!("execute-keys '<a-:><a-;>'"),
+      Handle::Cursor => println!("execute-keys <a-:>"),
+    }
+  }
+
+  fn display_replace_ranges(replace_ranges: &[ReplaceRange], handle: Handle) {
     print!("set-option window hop_ranges %val{{timestamp}} ");
 
     for range in replace_ranges {
@@ -282,7 +327,11 @@ impl Response {
         print!(
           "{start_line}.{start_col}+1|{{hop_label_head}}{head} ",
           start_line = sel.start.line,
-          start_col = sel.end.col - label_len + 1,
+          start_col = if handle == Handle::Anchor {
+            sel.start.col
+          } else {
+            sel.end.col - label_len + 1
+          },
         );
 
         let tail: String = graphemes.collect();
@@ -291,7 +340,11 @@ impl Response {
           print!(
             "{start_line}.{start_col}+{label_len}|{{hop_label_tail}}{tail} ",
             start_line = sel.start.line,
-            start_col = sel.end.col - label_len + 2,
+            start_col = if handle == Handle::Anchor {
+              sel.start.col + 1
+            } else {
+              sel.end.col - label_len + 2
+            },
             label_len = label_len - 1
           );
         }
@@ -305,7 +358,7 @@ impl Response {
     println!("try %{{ remove-highlighter window/hop-ranges }}");
   }
 
-  fn display_reduce_callback(replace_ranges: &[ReplaceRange]) {
+  fn display_reduce_callback(replace_ranges: &[ReplaceRange], handle: Handle) {
     if replace_ranges.len() == 1 {
       Self::display_cleanup();
       return;
@@ -317,7 +370,7 @@ impl Response {
     let labels = labels.join(" ");
 
     println!(
-      r#"on-key 'evaluate-commands -save-regs ^ -no-hooks -- %sh{{ {bin} --sels "{sels}" --labels "{labels}" --key $kak_key }}'"#,
+      r#"on-key 'evaluate-commands -save-regs ^ -no-hooks -- %sh{{ {bin} --handle {handle} --sels "{sels}" --labels "{labels}" --key $kak_key }}'"#,
       bin = std::env::current_exe().unwrap().display()
     );
   }
@@ -336,19 +389,27 @@ impl Response {
     match self {
       Self::Cleanup => Self::display_cleanup(),
 
-      Self::LabelsGenerated { replace_ranges } => {
+      Self::LabelsGenerated {
+        replace_ranges,
+        handle,
+      } => {
         Self::display_cleanup();
 
         println!("add-highlighter window/hop-ranges replace-ranges hop_ranges");
 
-        Self::display_replace_ranges(&replace_ranges);
-        Self::display_reduce_callback(&replace_ranges);
+        Self::display_replace_ranges(&replace_ranges, handle);
+        Self::set_handle(handle);
+        Self::display_reduce_callback(&replace_ranges, handle);
       }
 
-      Self::Reduced { replace_ranges } => {
-        Self::display_replace_ranges(&replace_ranges);
+      Self::Reduced {
+        replace_ranges,
+        handle,
+      } => {
+        Self::display_replace_ranges(&replace_ranges, handle);
         Self::display_new_sels(&replace_ranges);
-        Self::display_reduce_callback(&replace_ranges);
+        Self::set_handle(handle);
+        Self::display_reduce_callback(&replace_ranges, handle);
       }
     }
   }

@@ -62,6 +62,7 @@ evaluate-commands %sh{ hop-kak --init }
 - `-s --sels`: selections to hint. You should always pass `$kak_selections_desc` here.
 - `-l --labels`: previous generated labels. You should never need to use that argument.
 - `-z --key`: key for reduction. You should never need to use that argument.
+- `--handle`: which part of a selection to put the cursor on; the _anchor_, or the _cursor_. Default to the anchor.
 
 ## Usage
 
