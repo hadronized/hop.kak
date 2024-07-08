@@ -1,5 +1,7 @@
 # Hop: hinting brought to Kakoune selections
 
+> **Archive note**: the projet was moved to <https://git.sr.ht/~hadronized/hop.kak>.
+
 <p align="center">
   <img src="https://github.com/phaazon/hop.kak/assets/506592/ab90b0d1-4a07-458b-b5fe-4b10f26880d7"/>
 </p>
